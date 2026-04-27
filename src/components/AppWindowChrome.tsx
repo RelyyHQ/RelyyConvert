@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { MouseEvent } from "react";
-import { BadgeQuestionMark, CircleQuestionMark, Maximize2, MinusIcon, Moon, Sun, X } from "lucide-react";
+import { BadgeQuestionMark, CircleQuestionMark, MinusIcon, Moon, Sun, X, Square as Maximize2 } from "lucide-react";
 import { app as nlApp, init as nlInit, os as nlOs, window as nlWindow } from "@neutralinojs/lib";
 
 type DetectedPlatform = "windows" | "macos" | "linux" | "unknown";

@@ -73,6 +73,7 @@ type NeutralinoFilesystemStats = {
 
 type NeutralinoFilesystemApi = {
   createDirectory: (path: string) => Promise<void>;
+  writeBinaryFile?: (path: string, data: ArrayBuffer) => Promise<void>;
   readFile: (path: string) => Promise<string>;
   writeFile: (path: string, data: string) => Promise<void>;
   getStats: (path: string) => Promise<NeutralinoFilesystemStats>;

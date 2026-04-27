@@ -85,26 +85,9 @@ function ensureNativeReady() {
   return nativeReadyPromise;
 }
 
-function browserFileToAudio(file: FileWithPath): AudioFile {
-  const name = file.name;
-  const ext = name.split(".").pop() || "audio";
-  const title = name.replace(/\.[^.]+$/, "");
-  return {
-    id: ++fileCounter,
-    name,
-    path: getFilePath(file),
-    size: file.size,
-    srcFmt: ext.toUpperCase(),
-    dur: 0,
-    status: "probing",
-    progress: 0,
-    metadata: { ...emptyMetadata(), title },
-  };
-}
-
-function pathToAudio(path: string, size = 0): AudioFile {
+function pathToAudio(path: string, size = 0, displayName?: string): AudioFile {
   const normalized = path.replaceAll("\\", "/");
-  const name = normalized.split("/").pop() || path;
+  const name = displayName || normalized.split("/").pop() || path;
   const ext = name.split(".").pop() || "audio";
   const title = name.replace(/\.[^.]+$/, "");
   return {
@@ -198,6 +181,11 @@ function trimExt(name: string) {
 
 function sanitizePathPart(value: string) {
   return value.trim().replace(/[<>:"/\\|?*]/g, "-").replace(/\s+/g, " ").replace(/[. ]+$/g, "") || "converted";
+}
+
+function sanitizeFileName(value: string) {
+  const sanitized = value.trim().replace(/[<>:"/\\|?*]/g, "-").replace(/\s+/g, " ").replace(/^[. ]+|[. ]+$/g, "");
+  return sanitized || "dropped-audio";
 }
 
 function expandOutputName(file: AudioFile, outputFormat: Format, outputBitrate: number, outputTemplate: string) {
@@ -333,6 +321,27 @@ async function probeWithNativeFFprobe(file: AudioFile): Promise<ProbeResult> {
     bitrate: Number.parseInt(probe.format?.bit_rate ?? "0", 10) || 0,
     metadata: metadataFromTags(probe.format?.tags),
   };
+}
+
+async function droppedFileToPath(file: FileWithPath) {
+  const existingPath = getFilePath(file);
+  if (isAbsolutePath(existingPath)) {
+    return { path: existingPath, staged: false };
+  }
+
+  if (!await ensureNativeReady()) {
+    throw new Error("Dropped files require the Neutralino desktop runtime.");
+  }
+
+  const tempRoot = await nlOs.getPath("temp");
+  const dropDir = `${tempRoot}\\RelyyConvert\\drops`;
+  await nlFilesystem.createDirectory(`${tempRoot}\\RelyyConvert`).catch(() => undefined);
+  await nlFilesystem.createDirectory(dropDir).catch(() => undefined);
+
+  const safeName = sanitizeFileName(file.name);
+  const stagedPath = `${dropDir}\\${Date.now()}-${crypto.randomUUID()}-${safeName}`;
+  await nlFilesystem.writeBinaryFile(stagedPath, await file.arrayBuffer());
+  return { path: stagedPath, staged: true };
 }
 
 export default function App() {
@@ -614,17 +623,30 @@ export default function App() {
     });
   }, [failProbe]);
 
-  const addBrowserFiles = useCallback((fileList: FileList | File[]) => {
-    const nextFiles = Array.from(fileList).map((file) => browserFileToAudio(file as FileWithPath));
-    const filesWithPaths = nextFiles.filter((file) => isAbsolutePath(file.path));
-    if (!filesWithPaths.length) {
-      setFileNotice("This file source did not expose real filesystem paths. Use Browse Files so RelyyConvert can probe and convert the songs.");
-      return;
+  const addDroppedFiles = useCallback(async (fileList: FileList | File[]) => {
+    const droppedFiles = Array.from(fileList) as FileWithPath[];
+    if (!droppedFiles.length) return;
+
+    try {
+      const imported = await Promise.all(droppedFiles.map(async (file) => {
+        const importedPath = await droppedFileToPath(file);
+        return {
+          file: pathToAudio(importedPath.path, file.size, file.name),
+          staged: importedPath.staged,
+        };
+      }));
+      const nextFiles = imported.map((item) => item.file);
+      if (imported.some((item) => item.staged)) {
+        setFileNotice("Dropped files were imported into a local temp workspace because this webview did not expose their original paths. Choose a custom output folder if you do not want converted files written beside the staged copy.");
+      } else {
+        setFileNotice(null);
+      }
+      setFiles((prev) => [...prev, ...nextFiles]);
+      setConvertDone(false);
+      probeFiles(nextFiles);
+    } catch (error) {
+      setFileNotice(error instanceof Error ? error.message : "Dropped files could not be imported.");
     }
-    setFileNotice(null);
-    setFiles((prev) => [...prev, ...filesWithPaths]);
-    setConvertDone(false);
-    probeFiles(filesWithPaths);
   }, [probeFiles]);
 
   const addPaths = useCallback(async (paths: string[]) => {
@@ -683,8 +705,8 @@ export default function App() {
   const onDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragOver(false);
-    addBrowserFiles(event.dataTransfer.files);
-  }, [addBrowserFiles]);
+    void addDroppedFiles(event.dataTransfer.files);
+  }, [addDroppedFiles]);
 
   const onDropzoneDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
