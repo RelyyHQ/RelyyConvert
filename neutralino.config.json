@@ -1,0 +1,83 @@
+{
+  "$schema": "https://neutralino.js.org/schemas/neutralino.config.schema.json",
+  "applicationId": "com.relyyconvert.app",
+  "version": "0.1.0",
+  "defaultMode": "window",
+  "documentRoot": "/app/",
+  
+  "port": 0,
+  "enableServer": true,
+  "enableNativeAPI": true,
+  "enableExtensions": true,
+  "tokenSecurity": "one-time",
+  "nativeAllowList": [
+    "app.*",
+    "window.*",
+    "events.*",
+    "extensions.*",
+    "os.*",
+    "filesystem.*"
+  ],
+  "extensions": [
+    {
+      "id": "com.relyyconvert.backend",
+      "commandWindows": "${NL_PATH}/extensions/relyyconvert-backend/bin/win_x64/relyyconvert-backend.exe"
+    }
+  ],
+  "modes": {
+    "tray": {
+      "icon": "/favicon.ico",
+      "menu": [
+        {
+          "id": "show",
+          "text": "Show App"
+        },
+        {
+          "id": "hide",
+          "text": "Hide App"
+        },
+        {
+          "id": "exit",
+          "text": "Exit"
+        }
+      ]
+    },
+    "window": {
+      "title": "RelyyConvert",
+      "icon": "/favicon.ico",
+      "width": 1280,
+      "height": 1000,
+      "minWidth": 1180,
+      "minHeight": 740,
+      "center": true,
+      "borderless": true,
+      "resizable": true,
+      "maximizable": true,
+      "fullScreen": false,
+      "maximize": false,
+      "useSavedState": false,
+      "exitProcessOnClose": false,
+      "enableInspector": false,
+      "injectGlobals": true,
+      "injectClientLibrary": true
+    }
+  },
+  "cli": {
+    "binaryName": "relyyconvert",
+    "resourcesPath": "/app/",
+    "extensionsPath": "./extensions/",
+    "binaryVersion": "6.7.0",
+    "frontendLibrary": {
+      "patchFile": "/index.html",
+      "devUrl": "http://127.0.0.1:3000",
+      "projectPath": "/",
+      "initCommand": "npm install",
+      "devCommand": "npm run dev",
+      "buildCommand": "npm run build"
+    }
+  },
+  "logging": {
+    "enabled": true,
+    "writeToLogFile": false
+  }
+}
