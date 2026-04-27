@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"regexp"
 	"strconv"
@@ -169,7 +168,7 @@ func probeFile(ctx context.Context, path string) ProbeResult {
 	}
 	result.Size = stat.Size()
 
-	out, err := exec.CommandContext(ctx, ffprobePath(), "-v", "error", "-show_format", "-show_streams", "-of", "json", path).CombinedOutput()
+	out, err := hiddenCommand(ctx, ffprobePath(), "-v", "error", "-show_format", "-show_streams", "-of", "json", path).CombinedOutput()
 	if err != nil {
 		result.Error = commandError("ffprobe failed", err, out)
 		return result
@@ -215,7 +214,7 @@ func runFFmpeg(ctx context.Context, file ConvertFile, req ConvertRequest, output
 	args = append(args, codecArgs(req.Format, req.Bitrate)...)
 	args = append(args, output)
 
-	cmd := exec.CommandContext(ctx, ffmpegPath(), args...)
+	cmd := hiddenCommand(ctx, ffmpegPath(), args...)
 	stderr, _ := cmd.StderrPipe()
 	cmd.Stdout = bytes.NewBuffer(nil)
 	if err := cmd.Start(); err != nil {
@@ -410,14 +409,13 @@ func bundledToolPath(name string) string {
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
 		candidates = append(candidates,
-			filepath.Join(dir, "extensions", "relyyconvert-backend", "vendor", "ffmpeg", "win_x64", name),
-			filepath.Join(dir, "vendor", "ffmpeg", "win_x64", name),
+			filepath.Join(dir, "third_party", "ffmpeg", "win_x64", name),
 		)
 	}
 	if cwd, err := os.Getwd(); err == nil {
 		candidates = append(candidates,
-			filepath.Join(cwd, "extensions", "relyyconvert-backend", "vendor", "ffmpeg", "win_x64", name),
-			filepath.Join(cwd, "..", "extensions", "relyyconvert-backend", "vendor", "ffmpeg", "win_x64", name),
+			filepath.Join(cwd, "third_party", "ffmpeg", "win_x64", name),
+			filepath.Join(cwd, "..", "third_party", "ffmpeg", "win_x64", name),
 		)
 	}
 	for _, candidate := range candidates {

@@ -17,9 +17,13 @@ frontend/wailsjs/
 wailsjs/
 package.json.md5
 *.local
-extensions/relyyconvert-backend/bin/
-extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffmpeg.exe
-extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffprobe.exe
+.env*.local
+env*.local
+certs/
+*.pfx
+*.p12
+third_party/ffmpeg/win_x64/ffmpeg.exe
+third_party/ffmpeg/win_x64/ffprobe.exe
 
 # Editor directories and files
 .vscode/*

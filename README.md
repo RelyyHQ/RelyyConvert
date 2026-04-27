@@ -1,98 +1,95 @@
-# React + TypeScript + Vite
+# RelyyConvert
 
-## Go conversion backend
+RelyyConvert is a Windows-first desktop audio converter built with Wails, Go, React, and Vite.
 
-RelyyConvert uses a Neutralino extension backend in `extensions/relyyconvert-backend`.
-
-Build the Windows x64 backend:
+## Development
 
 ```bash
-npm run backend:build:win
+npm install
+npm run wails:dev
 ```
 
-Package the app:
+The Wails shell provides native file dialogs and native drag/drop paths. Dragged files are resolved to their original absolute filesystem paths before probing or conversion.
+
+## FFmpeg
+
+Bundled Windows x64 FFmpeg tools are expected at:
+
+- `third_party/ffmpeg/win_x64/ffmpeg.exe`
+- `third_party/ffmpeg/win_x64/ffprobe.exe`
+
+Use an LGPL-compatible FFmpeg build. Keep the matching license, source notice, and build provenance files beside the binaries and reflected in `THIRD_PARTY_NOTICES.md`.
+
+## Build
 
 ```bash
-npm run neutralino:build
+npm run app:build
 ```
 
-Bundled FFmpeg binaries are expected at:
+This builds the Wails executable at:
 
-- `extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffmpeg.exe`
-- `extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffprobe.exe`
-
-Use an LGPL-compatible Windows x64 FFmpeg build and place the matching license/source notice files beside the binaries or in `THIRD_PARTY_NOTICES.md` before distributing the app. The repository intentionally does not include downloaded FFmpeg binaries.
-
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
-
-Currently, two official plugins are available:
-
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
-
-## React Compiler
-
-The React Compiler is enabled on this template. See [this documentation](https://react.dev/learn/react-compiler) for more information.
-
-Note: This will impact Vite dev & build performances.
-
-## Expanding the ESLint configuration
-
-If you are developing a production application, we recommend updating the configuration to enable type-aware lint rules:
-
-```js
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-
-      // Remove tseslint.configs.recommended and replace with this
-      tseslint.configs.recommendedTypeChecked,
-      // Alternatively, use this for stricter rules
-      tseslint.configs.strictTypeChecked,
-      // Optionally, add this for stylistic rules
-      tseslint.configs.stylisticTypeChecked,
-
-      // Other configs...
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+build/bin/RelyyConvert.exe
 ```
 
-You can also install [eslint-plugin-react-x](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-x) and [eslint-plugin-react-dom](https://github.com/Rel1cx/eslint-react/tree/main/packages/plugins/eslint-plugin-react-dom) for React-specific lint rules:
+The build script copies bundled FFmpeg files into:
 
-```js
-// eslint.config.js
-import reactX from 'eslint-plugin-react-x'
-import reactDom from 'eslint-plugin-react-dom'
-
-export default defineConfig([
-  globalIgnores(['dist']),
-  {
-    files: ['**/*.{ts,tsx}'],
-    extends: [
-      // Other configs...
-      // Enable lint rules for React
-      reactX.configs['recommended-typescript'],
-      // Enable lint rules for React DOM
-      reactDom.configs.recommended,
-    ],
-    languageOptions: {
-      parserOptions: {
-        project: ['./tsconfig.node.json', './tsconfig.app.json'],
-        tsconfigRootDir: import.meta.dirname,
-      },
-      // other options...
-    },
-  },
-])
+```text
+build/bin/third_party/ffmpeg/win_x64/
 ```
+
+## Signing
+
+Install the Windows SDK so `signtool.exe` is available. Signing scripts automatically load `.env.installer.local` or `env.installer.local` when present.
+
+For a local self-signed development certificate:
+
+```powershell
+npm run cert:create-dev
+npm run app:sign
+```
+
+For a CA-issued certificate file:
+
+```powershell
+$env:WINDOWS_CERT_PATH="C:\path\to\certificate.pfx"
+$env:WINDOWS_CERT_PASSWORD="certificate-password"
+npm run app:sign
+```
+
+Optional environment variables:
+
+- `SIGNTOOL_PATH`
+- `WINDOWS_SIGN_CERT_FILE`
+- `WINDOWS_SIGN_CERT_SHA1`
+- `WINDOWS_CERT_SUBJECT`
+- `WINDOWS_TIMESTAMP_URL`
+- `WINDOWS_SIGN_DIGEST`
+
+## Installer
+
+Install Inno Setup 6 and run:
+
+```bash
+npm run installer:build
+```
+
+The installer output is:
+
+```text
+dist/installer/RelyyConvertSetup.exe
+```
+
+For the full Windows release pipeline:
+
+```bash
+npm run release:windows
+```
+
+Required release checks:
+
+- `npm run lint`
+- `go test .`
+- `npm run app:build`
+- `npm run app:sign`
+- `npm run installer:build`

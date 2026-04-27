@@ -7,10 +7,11 @@
     "dev": "vite --host 127.0.0.1 --port 3000",
     "wails:dev": "node scripts/wails.mjs dev",
     "wails:build": "npm run build && node scripts/wails.mjs build && node scripts/copy-wails-assets.mjs",
-    "backend:build:win": "node scripts/build-backend-win.mjs",
-    "neutralino:run": "npm run backend:build:win && npx neu run",
-    "neutralino:build": "npm run build && npm run backend:build:win && npx neu build",
-    "neutralino:update": "npx neu update",
+    "app:build": "npm run wails:build",
+    "cert:create-dev": "powershell -ExecutionPolicy Bypass -File scripts/create-dev-signing-cert.ps1",
+    "app:sign": "node scripts/sign-windows.mjs",
+    "installer:build": "node scripts/build-installer.mjs",
+    "release:windows": "npm run lint && go test . && npm run app:build && npm run app:sign && npm run installer:build && npm run app:sign",
     "build": "tsc -b && vite build",
     "lint": "eslint .",
     "preview": "vite preview --host 127.0.0.1 --port 3000"
@@ -25,7 +26,6 @@
   "devDependencies": {
     "@babel/core": "^7.29.0",
     "@eslint/js": "^10.0.1",
-    "@neutralinojs/neu": "^11.7.1",
     "@rolldown/plugin-babel": "^0.2.3",
     "@types/babel__core": "^7.20.5",
     "@types/node": "^24.12.2",

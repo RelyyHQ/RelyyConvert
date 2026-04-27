@@ -1,5 +1,5 @@
 import { useCallback, useState } from "react";
-import { BadgeQuestionMark, CircleQuestionMark, Maximize2, MinusIcon, Moon, Sun, X } from "lucide-react";
+import { BadgeQuestionMark, CircleQuestionMark, MinusIcon, Moon, Square, Sun, X } from "lucide-react";
 
 type AppWindowChromeProps = {
   appName: string;
@@ -79,7 +79,7 @@ export default function AppWindowChrome({
           <MinusIcon className="h-3.5 w-3.5" />
         </button>
         <button type="button" onClick={() => callRuntime("WindowToggleMaximise")} title="Maximize" className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-[hsl(var(--theme-border))] bg-[hsl(var(--theme-surface-alt))] transition-colors hover:bg-white/70 dark:hover:bg-white/5">
-          <Maximize2 className="h-3.5 w-3.5" />
+          <Square className="h-3.5 w-3.5" />
         </button>
         <button type="button" onClick={() => callRuntime("Quit")} title="Close" className="inline-flex h-7 w-7 items-center justify-center rounded-sm border border-[hsl(var(--theme-border))] bg-[hsl(var(--theme-surface-alt))] transition-colors hover:bg-white/70 dark:hover:bg-white/5">
           <X className="h-3.5 w-3.5" />
