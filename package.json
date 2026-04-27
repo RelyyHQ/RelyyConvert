@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "vite --host 127.0.0.1 --port 3000",
     "backend:build:win": "node scripts/build-backend-win.mjs",
-    "neutralino:run": "npx neu run",
+    "neutralino:run": "npm run backend:build:win && npx neu run",
     "neutralino:build": "npm run build && npm run backend:build:win && npx neu build",
     "neutralino:update": "npx neu update",
     "build": "tsc -b && vite build",

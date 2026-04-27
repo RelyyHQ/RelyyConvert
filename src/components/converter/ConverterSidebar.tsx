@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { FolderOpen } from "lucide-react";
 import { BITRATES, DEST_OPTIONS, FORMATS, LOSSLESS, TEMPLATE_TAGS } from "./model";
 import type { AudioFile, DestType, Format } from "./model";
 
@@ -18,6 +19,7 @@ type ConverterSidebarProps = {
   onBitrateChange: (bitrate: number) => void;
   onDestChange: (dest: DestType) => void;
   onCustomPathChange: (value: string) => void;
+  onChooseCustomPath: () => void;
   onSubfolderChange: (value: string) => void;
   onTemplateChange: (value: string) => void;
   onAppendTemplateTag: (tag: string) => void;
@@ -40,6 +42,7 @@ export default function ConverterSidebar({
   onBitrateChange,
   onDestChange,
   onCustomPathChange,
+  onChooseCustomPath,
   onSubfolderChange,
   onTemplateChange,
   onAppendTemplateTag,
@@ -121,11 +124,17 @@ export default function ConverterSidebar({
           />
         ) : null}
         {dest === "custom" ? (
-          <input
-            className="text-input mt-2"
-            value={customPath}
-            onChange={(event) => onCustomPathChange(event.target.value)}
-          />
+          <div className="path-picker mt-2">
+            <input
+              className="text-input"
+              value={customPath}
+              placeholder="Choose an output folder"
+              onChange={(event) => onCustomPathChange(event.target.value)}
+            />
+            <button className="icon-btn" type="button" title="Choose output folder" onClick={onChooseCustomPath}>
+              <FolderOpen className="h-3.5 w-3.5" />
+            </button>
+          </div>
         ) : null}
       </div>
 

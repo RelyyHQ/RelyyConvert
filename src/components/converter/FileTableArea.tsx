@@ -36,6 +36,8 @@ export default function FileTableArea({
   onRemoveFile,
   onToggleMetadataPanel,
 }: FileTableAreaProps) {
+  const errorFiles = files.filter((file) => file.status === "error" && file.error);
+
   return (
     <div className="file-area" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
       <div className="table-toolbar">
@@ -50,6 +52,12 @@ export default function FileTableArea({
           <Trash2 className="h-3.5 w-3.5" />
         </button>
       </div>
+      {errorFiles.length > 0 ? (
+        <div className="file-error-banner">
+          <strong>{errorFiles.length} file{errorFiles.length === 1 ? "" : "s"} need attention</strong>
+          <span>{errorFiles[0].name}: {errorFiles[0].error}</span>
+        </div>
+      ) : null}
       <div className="table-wrap">
         <table className="file-table">
           <thead>
@@ -93,7 +101,7 @@ export default function FileTableArea({
                 <td className="output-cell" title={previewName(file)}>
                   {previewName(file)}
                 </td>
-                <td>
+                <td className={file.error ? "status-cell status-cell-error" : "status-cell"}>
                   {file.status === "converting" ? (
                     <div className="status-stack">
                       <Badge status={file.status} progress={file.progress} />
@@ -102,9 +110,11 @@ export default function FileTableArea({
                       </span>
                     </div>
                   ) : (
-                    <span title={file.error || file.outputPath || undefined}>
+                    <div className="status-stack">
                       <Badge status={file.status} />
-                    </span>
+                      {file.error ? <span className="status-detail" title={file.error}>{file.error}</span> : null}
+                      {!file.error && file.outputPath ? <span className="status-detail" title={file.outputPath}>{file.outputPath}</span> : null}
+                    </div>
                   )}
                 </td>
                 <td onClick={(event) => event.stopPropagation()}>

@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"time"
 )
 
 type sender interface {
@@ -125,7 +126,9 @@ func (b *Backend) Handle(ctx context.Context, event string, data json.RawMessage
 			b.Broadcast("media.probed", ProbeResult{Error: err.Error()})
 			return
 		}
-		b.Broadcast("media.probed", b.Probe(ctx, req))
+		probeCtx, cancel := context.WithTimeout(ctx, 20*time.Second)
+		defer cancel()
+		b.Broadcast("media.probed", b.Probe(probeCtx, req))
 	case "conversion.start":
 		var req ConvertRequest
 		if err := json.Unmarshal(data, &req); err != nil {
@@ -182,9 +185,9 @@ func (b *Backend) Probe(ctx context.Context, req ProbeRequest) ProbeResult {
 	}
 	result.Size = stat.Size()
 
-	out, err := exec.CommandContext(ctx, b.ffprobePath, "-v", "error", "-show_format", "-show_streams", "-of", "json", req.Path).Output()
+	out, err := exec.CommandContext(ctx, b.ffprobePath, "-v", "error", "-show_format", "-show_streams", "-of", "json", req.Path).CombinedOutput()
 	if err != nil {
-		result.Error = err.Error()
+		result.Error = commandError("ffprobe failed", err, out)
 		return result
 	}
 
@@ -513,6 +516,17 @@ func firstFormat(format string) string {
 func parseFloat(value string) float64 {
 	parsed, _ := strconv.ParseFloat(value, 64)
 	return parsed
+}
+
+func commandError(prefix string, err error, output []byte) string {
+	detail := strings.TrimSpace(string(output))
+	if detail == "" {
+		return prefix + ": " + err.Error()
+	}
+	if len(detail) > 500 {
+		detail = detail[:500] + "..."
+	}
+	return prefix + ": " + detail
 }
 
 func trimExt(name string) string {

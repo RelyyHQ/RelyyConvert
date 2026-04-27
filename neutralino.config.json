@@ -57,7 +57,8 @@
       "maximize": false,
       "useSavedState": false,
       "exitProcessOnClose": false,
-      "enableInspector": false,
+      "enableInspector": true,
+      "openInspectorOnStartup": true,
       "injectGlobals": true,
       "injectClientLibrary": true
     }

@@ -40,9 +40,14 @@ type NeutralinoOsApi = {
     title: string,
     options?: {
       multiSelections?: boolean;
+      defaultPath?: string;
       filters?: Array<{ name: string; extensions: string[] }>;
     },
   ) => Promise<string[]>;
+  showFolderDialog?: (
+    title: string,
+    options?: { defaultPath?: string },
+  ) => Promise<string>;
   execCommand: (
     command: string,
     options?: { stdIn?: string; background?: boolean; cwd?: string },
