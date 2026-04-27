@@ -66,3 +66,14 @@ Run `npm run app:sign` again after installer creation to sign the installer.
 ```bash
 npm run release:windows
 ```
+
+## Upload To R2
+
+Create `.env.release.local` from `env.release.example`, then run:
+
+```bash
+npm run release:upload:dry
+npm run release:upload
+```
+
+The uploader publishes the installer, a `.sha256` checksum, a version manifest, and `releases/windows/latest.json`.

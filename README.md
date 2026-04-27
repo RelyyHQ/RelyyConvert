@@ -86,6 +86,15 @@ For the full Windows release pipeline:
 npm run release:windows
 ```
 
+Upload the latest built artifact to an S3-compatible release bucket such as Cloudflare R2:
+
+```bash
+npm run release:upload:dry
+npm run release:upload
+```
+
+The upload script reads `.env.release.local`, `.env.installer.local`, `.env.local`, or `.env`. See `env.release.example` for required R2 variables.
+
 Required release checks:
 
 - `npm run lint`
