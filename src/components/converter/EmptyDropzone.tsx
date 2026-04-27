@@ -19,7 +19,12 @@ export default function EmptyDropzone({
   onLoadDemo,
 }: EmptyDropzoneProps) {
   return (
-    <div className={`dropzone${dragOver ? " drag-over" : ""}`} onDragOver={onDragOver} onDragLeave={onDragLeave} onDrop={onDrop}>
+    <div
+      className={`dropzone wails-file-drop-target${dragOver ? " drag-over" : ""}`}
+      onDragOver={onDragOver}
+      onDragLeave={onDragLeave}
+      onDrop={onDrop}
+    >
       <Upload className="dropzone-icon" />
       <div className="dropzone-title">Drop audio files here</div>
       <div className="dropzone-sub">MP3, AAC, FLAC, WAV, OGG, OPUS, AIFF, WMA and more</div>

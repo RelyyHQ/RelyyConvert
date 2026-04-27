@@ -1,6 +1,5 @@
-import type { DragEvent } from "react";
+import type { CSSProperties, DragEvent } from "react";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { events as nlEvents, extensions as nlExtensions, filesystem as nlFilesystem, init as nlInit, os as nlOs } from "@neutralinojs/lib";
 import AppWindowChrome from "./components/AppWindowChrome";
 import ConversionFooter from "./components/converter/ConversionFooter";
 import ConverterSidebar from "./components/converter/ConverterSidebar";
@@ -10,28 +9,18 @@ import MetadataPanel from "./components/converter/MetadataPanel";
 import { BITRATES, EXT_MAP, LOSSLESS } from "./components/converter/model";
 import type { AudioFile, DestType, FileMetadata, Format } from "./components/converter/model";
 
-const BACKEND_ID = "com.relyyconvert.backend";
-
 let fileCounter = 0;
 
-type FileWithPath = File & { path?: string; fullPath?: string };
-
-type BackendHealth = {
-  ok: boolean;
-  error?: string;
-};
-
 type ProbeResult = {
-  id: number;
-  name?: string;
-  path?: string;
-  size?: number;
-  duration?: number;
-  format?: string;
-  codec?: string;
-  bitrate?: number;
+  path: string;
+  name: string;
+  size: number;
+  duration: number;
+  format: string;
+  codec: string;
+  bitrate: number;
   error?: string;
-  metadata?: Partial<FileMetadata>;
+  metadata: FileMetadata;
 };
 
 type ConversionEvent = {
@@ -41,15 +30,24 @@ type ConversionEvent = {
   error?: string;
 };
 
-type FFprobeOutput = {
-  streams?: Array<{ codec_name?: string; codec_type?: string }>;
-  format?: {
-    format_name?: string;
-    duration?: string;
-    bit_rate?: string;
-    tags?: Record<string, string>;
-  };
+type ConvertRequest = {
+  files: Array<{
+    id: number;
+    path: string;
+    name: string;
+    duration: number;
+    metadata: FileMetadata;
+  }>;
+  format: Format;
+  bitrate: number;
+  dest: DestType;
+  customPath: string;
+  subfolder: string;
+  template: string;
+  preserveMeta: boolean;
 };
+
+type WailsApp = NonNullable<NonNullable<Window["go"]>["main"]>["App"];
 
 const emptyMetadata = (): FileMetadata => ({ title: "", artist: "", album: "", year: "", genre: "", track: "", comment: "" });
 
@@ -59,289 +57,34 @@ const fmtSize = (bytes: number) =>
 const fmtDur = (seconds: number) =>
   `${Math.floor(seconds / 60)}:${String(Math.floor(seconds % 60)).padStart(2, "0")}`;
 
-const getFilePath = (file: FileWithPath) => file.path || file.fullPath || file.webkitRelativePath || file.name;
+const pathName = (path: string) => path.replaceAll("\\", "/").split("/").pop() || path;
 
-const hasNeutralinoGlobals = () => {
-  const w = window as Window & { NL_PORT?: unknown; NL_TOKEN?: unknown };
-  return (typeof w.NL_PORT === "number" || typeof w.NL_PORT === "string") && typeof w.NL_TOKEN === "string" && w.NL_TOKEN.length > 0;
-};
-const isWindowsAbsolutePath = (path: string) => /^[a-zA-Z]:[\\/]/.test(path) || path.startsWith("\\\\");
-const isAbsolutePath = (path: string) => path.startsWith("/") || isWindowsAbsolutePath(path);
-const audioFilters = [{ name: "Audio", extensions: ["mp3", "wav", "flac", "aac", "m4a", "ogg", "opus", "aiff", "wma"] }];
-const probeTimeoutMs = 20_000;
-
-let nativeReadyPromise: Promise<boolean> | null = null;
-
-function ensureNativeReady() {
-  if (!hasNeutralinoGlobals()) return Promise.resolve(false);
-  if (window.__nlReady) return Promise.resolve(true);
-  nativeReadyPromise ??= new Promise<boolean>((resolve) => {
-    window.addEventListener("ready", () => {
-      window.__nlReady = true;
-      resolve(true);
-    }, { once: true });
-    nlInit();
-  });
-  return nativeReadyPromise;
-}
-
-function pathToAudio(path: string, size = 0, displayName?: string): AudioFile {
-  const normalized = path.replaceAll("\\", "/");
-  const name = displayName || normalized.split("/").pop() || path;
-  const ext = name.split(".").pop() || "audio";
-  const title = name.replace(/\.[^.]+$/, "");
+function resultToAudioFile(result: ProbeResult): AudioFile {
+  const name = result.name || pathName(result.path);
+  const metadata = { ...emptyMetadata(), ...result.metadata };
+  if (!metadata.title) metadata.title = name.replace(/\.[^.]+$/, "");
   return {
     id: ++fileCounter,
     name,
-    path,
-    size,
-    srcFmt: ext.toUpperCase(),
-    dur: 0,
-    status: "probing",
+    path: result.path,
+    size: result.size || 0,
+    srcFmt: result.codec || result.format || (name.split(".").pop() || "audio").toUpperCase(),
+    dur: result.duration || 0,
+    status: result.error ? "error" : "ready",
     progress: 0,
-    metadata: { ...emptyMetadata(), title },
+    error: result.error,
+    metadata,
   };
 }
 
-function demoFile(name: string, ext: string, size: number, duration: number): AudioFile {
-  const title = name.replace(/\.[^.]+$/, "");
-  return {
-    id: ++fileCounter,
-    name,
-    path: "",
-    size,
-    srcFmt: ext.toUpperCase(),
-    dur: duration,
-    status: "error",
-    progress: 0,
-    error: "Demo files do not have real filesystem paths.",
-    metadata: { ...emptyMetadata(), title },
-  };
-}
-
-function detailData<T>(event: CustomEvent<unknown>): T | null {
-  const detail = event.detail as { data?: T } | T | undefined;
-  if (!detail) return null;
-  if (typeof detail === "object" && "data" in detail) return (detail as { data: T }).data;
-  return detail as T;
-}
-
-async function dispatchBackend(event: string, data?: unknown) {
-  if (!await ensureNativeReady()) {
-    throw new Error("Neutralino native runtime is not available.");
-  }
-  return nlExtensions.dispatch(BACKEND_ID, event, data);
-}
-
-async function getExtensionProblem() {
-  if (!await ensureNativeReady()) return "Neutralino native runtime is not available.";
-  const stats = await nlExtensions.getStats();
-  if (!stats.loaded.includes(BACKEND_ID)) return "Go backend extension is not loaded.";
-  if (!stats.connected.includes(BACKEND_ID)) return "Go backend extension is not connected.";
-  return null;
-}
-
-function quoteCommandArg(value: string) {
-  let result = "\"";
-  let backslashes = 0;
-  for (const char of value) {
-    if (char === "\\") {
-      backslashes += 1;
-      continue;
-    }
-    if (char === "\"") {
-      result += "\\".repeat(backslashes * 2 + 1);
-      result += "\"";
-      backslashes = 0;
-      continue;
-    }
-    result += "\\".repeat(backslashes);
-    backslashes = 0;
-    result += char;
-  }
-  result += "\\".repeat(backslashes * 2);
-  result += "\"";
-  return result;
-}
-
-function commandFromArgs(args: string[]) {
-  return args.map(quoteCommandArg).join(" ");
-}
-
-function pathDir(path: string) {
-  const normalized = path.replaceAll("/", "\\");
-  const index = normalized.lastIndexOf("\\");
-  return index >= 0 ? normalized.slice(0, index) : ".";
-}
-
-function trimExt(name: string) {
-  const index = name.lastIndexOf(".");
-  return index > 0 ? name.slice(0, index) : name;
-}
-
-function sanitizePathPart(value: string) {
-  return value.trim().replace(/[<>:"/\\|?*]/g, "-").replace(/\s+/g, " ").replace(/[. ]+$/g, "") || "converted";
-}
-
-function sanitizeFileName(value: string) {
-  const sanitized = value.trim().replace(/[<>:"/\\|?*]/g, "-").replace(/\s+/g, " ").replace(/^[. ]+|[. ]+$/g, "");
-  return sanitized || "dropped-audio";
-}
-
-function expandOutputName(file: AudioFile, outputFormat: Format, outputBitrate: number, outputTemplate: string) {
-  const value = (outputTemplate || "{name}")
-    .replaceAll("{name}", trimExt(file.name))
-    .replaceAll("{format}", outputFormat.toLowerCase())
-    .replaceAll("{bitrate}", String(outputBitrate))
-    .replaceAll("{artist}", file.metadata.artist || "unknown")
-    .replaceAll("{album}", file.metadata.album || "unknown")
-    .replaceAll("{track}", file.metadata.track || "00")
-    .replaceAll("{year}", file.metadata.year || "");
-  return sanitizePathPart(value);
-}
-
-async function pathExists(path: string) {
-  return Boolean(await nlFilesystem.getStats(path).catch(() => undefined));
-}
-
-async function uniqueOutputPath(path: string) {
-  if (!await pathExists(path)) return path;
-  const index = path.lastIndexOf(".");
-  const base = index > 0 ? path.slice(0, index) : path;
-  const ext = index > 0 ? path.slice(index) : "";
-  for (let i = 1; i < 10_000; i += 1) {
-    const candidate = `${base} (${i})${ext}`;
-    if (!await pathExists(candidate)) return candidate;
-  }
-  throw new Error("Could not find an available output filename.");
-}
-
-async function resolveOutputPath(file: AudioFile, outputFormat: Format, outputBitrate: number, outputDest: DestType, outputCustomPath: string, outputSubfolder: string, outputTemplate: string) {
-  let outputDir = pathDir(file.path);
-  if (outputDest === "subfolder") {
-    outputDir = `${outputDir}\\${sanitizePathPart(outputSubfolder || "converted")}`;
-    await nlFilesystem.createDirectory(outputDir).catch(() => undefined);
-  }
-  if (outputDest === "custom") {
-    if (!outputCustomPath.trim()) throw new Error("Choose a custom output folder first.");
-    outputDir = outputCustomPath;
-  }
-  const outputName = `${expandOutputName(file, outputFormat, outputBitrate, outputTemplate)}.${EXT_MAP[outputFormat]}`;
-  return uniqueOutputPath(`${outputDir}\\${outputName}`);
-}
-
-function ffmpegCodecArgs(outputFormat: Format, outputBitrate: number) {
-  switch (outputFormat) {
-    case "MP3": return ["-codec:a", "libmp3lame", "-b:a", `${outputBitrate}k`];
-    case "AAC": return ["-codec:a", "aac", "-b:a", `${outputBitrate}k`];
-    case "FLAC": return ["-codec:a", "flac"];
-    case "WAV": return ["-codec:a", "pcm_s16le"];
-    case "OGG": return ["-codec:a", "libvorbis", "-b:a", `${outputBitrate}k`];
-    case "OPUS": return ["-codec:a", "libopus", "-b:a", `${outputBitrate}k`];
-    case "AIFF": return ["-codec:a", "pcm_s16be"];
-    case "WMA": return ["-codec:a", "wmav2", "-b:a", `${outputBitrate}k`];
-  }
-}
-
-function metadataArgs(meta: FileMetadata) {
-  const entries: Array<[string, string]> = [
-    ["title", meta.title],
-    ["artist", meta.artist],
-    ["album", meta.album],
-    ["date", meta.year],
-    ["genre", meta.genre],
-    ["track", meta.track],
-    ["comment", meta.comment],
-  ];
-  return entries.flatMap(([key, value]) => value.trim() ? ["-metadata", `${key}=${value}`] : []);
-}
-
-async function convertWithNativeFFmpeg(file: AudioFile, outputPath: string, outputFormat: Format, outputBitrate: number, shouldPreserveMeta: boolean) {
-  const ffmpegPath = `${window.NL_PATH}/extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffmpeg.exe`;
-  const args = [
-    ffmpegPath,
-    "-y",
-    "-hide_banner",
-    "-i",
-    file.path,
-    ...(shouldPreserveMeta ? ["-map_metadata", "0"] : []),
-    ...metadataArgs(file.metadata),
-    ...ffmpegCodecArgs(outputFormat, outputBitrate),
-    outputPath,
-  ];
-  const result = await nlOs.execCommand(commandFromArgs(args));
-  if (result.exitCode !== 0) {
-    throw new Error(`ffmpeg failed: ${result.stdErr || result.stdOut || `exit code ${result.exitCode}`}`);
-  }
-}
-
-function metadataFromTags(tags?: Record<string, string>): FileMetadata {
-  const find = (...keys: string[]) => {
-    if (!tags) return "";
-    const match = Object.entries(tags).find(([key]) => keys.some((candidate) => candidate.toLowerCase() === key.toLowerCase()));
-    return match?.[1] ?? "";
-  };
-  return {
-    title: find("title"),
-    artist: find("artist", "album_artist"),
-    album: find("album"),
-    year: find("date", "year"),
-    genre: find("genre"),
-    track: find("track", "tracknumber"),
-    comment: find("comment", "description"),
-  };
-}
-
-async function probeWithNativeFFprobe(file: AudioFile): Promise<ProbeResult> {
-  const ffprobePath = `${window.NL_PATH}/extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffprobe.exe`;
-  const command = [
-    ffprobePath,
-    "-v",
-    "error",
-    "-show_format",
-    "-show_streams",
-    "-of",
-    "json",
-    file.path,
-  ];
-  const result = await nlOs.execCommand(commandFromArgs(command));
-  if (result.exitCode !== 0) {
-    return { id: file.id, name: file.name, path: file.path, error: `ffprobe failed: ${result.stdErr || result.stdOut || `exit code ${result.exitCode}`}` };
-  }
-  const probe = JSON.parse(result.stdOut) as FFprobeOutput;
-  const audioStream = probe.streams?.find((stream) => stream.codec_type === "audio");
-  return {
-    id: file.id,
-    name: file.name,
-    path: file.path,
-    size: file.size,
-    duration: Number.parseFloat(probe.format?.duration ?? "0") || 0,
-    format: (probe.format?.format_name?.split(",")[0] ?? file.srcFmt).toUpperCase(),
-    codec: (audioStream?.codec_name ?? file.srcFmt).toUpperCase(),
-    bitrate: Number.parseInt(probe.format?.bit_rate ?? "0", 10) || 0,
-    metadata: metadataFromTags(probe.format?.tags),
-  };
-}
-
-async function droppedFileToPath(file: FileWithPath) {
-  const existingPath = getFilePath(file);
-  if (isAbsolutePath(existingPath)) {
-    return { path: existingPath, staged: false };
-  }
-
-  if (!await ensureNativeReady()) {
-    throw new Error("Dropped files require the Neutralino desktop runtime.");
-  }
-
-  const tempRoot = await nlOs.getPath("temp");
-  const dropDir = `${tempRoot}\\RelyyConvert\\drops`;
-  await nlFilesystem.createDirectory(`${tempRoot}\\RelyyConvert`).catch(() => undefined);
-  await nlFilesystem.createDirectory(dropDir).catch(() => undefined);
-
-  const safeName = sanitizeFileName(file.name);
-  const stagedPath = `${dropDir}\\${Date.now()}-${crypto.randomUUID()}-${safeName}`;
-  await nlFilesystem.writeBinaryFile(stagedPath, await file.arrayBuffer());
-  return { path: stagedPath, staged: true };
+async function callApp<K extends keyof WailsApp>(
+  method: K,
+  ...args: Parameters<WailsApp[K]>
+): Promise<Awaited<ReturnType<WailsApp[K]>>> {
+  const app = window.go?.main?.App as WailsApp | undefined;
+  if (!app) throw new Error("Wails runtime is not available. Start the app with npm run wails:dev.");
+  const callable = app[method] as (...args: Parameters<WailsApp[K]>) => ReturnType<WailsApp[K]>;
+  return callable(...args) as Promise<Awaited<ReturnType<WailsApp[K]>>>;
 }
 
 export default function App() {
@@ -360,9 +103,9 @@ export default function App() {
   const [converting, setConverting] = useState(false);
   const [convertDone, setConvertDone] = useState(false);
   const [selected, setSelected] = useState<Set<number>>(new Set());
-  const [backendStatus, setBackendStatus] = useState(() => (hasNeutralinoGlobals() ? "Starting" : "Browser preview"));
+  const [runtimeStatus, setRuntimeStatus] = useState(() => (window.go?.main?.App ? "Backend ready" : "Browser preview"));
   const [fileNotice, setFileNotice] = useState<string | null>(null);
-  const probeTimersRef = useRef<Map<number, number>>(new Map());
+  const importedPathsRef = useRef<Set<string>>(new Set());
 
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
@@ -374,156 +117,92 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const probeTimers = probeTimersRef.current;
-    return () => {
-      for (const timer of probeTimers.values()) {
-        window.clearTimeout(timer);
-      }
-      probeTimers.clear();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!hasNeutralinoGlobals()) {
-      return;
-    }
-
-    let active = true;
-    const listen = async () => {
-      const ready = await ensureNativeReady();
-      if (!ready || !active) return;
-
-      void nlExtensions.getStats().then((stats) => {
-        if (!active) return;
-        if (!stats.loaded.includes(BACKEND_ID)) {
-          setBackendStatus("Backend extension not loaded");
-          return;
-        }
-        if (!stats.connected.includes(BACKEND_ID)) {
-          setBackendStatus("Backend extension not connected");
-        }
-      }).catch(() => {
-        if (active) setBackendStatus("Backend status unavailable");
-      });
-
-      await nlEvents.on("backend.ready", (event) => {
-        const health = detailData<BackendHealth>(event);
-        if (!active || !health) return;
-        setBackendStatus(health.ok ? "Backend ready" : health.error || "FFmpeg missing");
-      });
-
-      await nlEvents.on("media.probed", (event) => {
-        const result = detailData<ProbeResult>(event);
-        if (!active || !result) return;
-        const timer = probeTimersRef.current.get(result.id);
-        if (timer) {
-          window.clearTimeout(timer);
-          probeTimersRef.current.delete(result.id);
-        }
-        setFiles((prev) =>
-          prev.map((file) =>
-            file.id === result.id
-              ? {
-                  ...file,
-                  name: result.name || file.name,
-                  path: result.path || file.path,
-                  size: result.size ?? file.size,
-                  dur: result.duration ?? file.dur,
-                  srcFmt: result.codec || result.format || file.srcFmt,
-                  status: result.error ? "error" : "ready",
-                  error: result.error,
-                  metadata: { ...file.metadata, ...result.metadata },
-                }
-              : file,
-          ),
-        );
-      });
-
-      await nlEvents.on("conversion.progress", (event) => {
-        const result = detailData<ConversionEvent>(event);
-        if (!active || !result?.id) return;
-        setFiles((prev) =>
-          prev.map((file) =>
-            file.id === result.id
-              ? { ...file, status: "converting", progress: result.progress ?? file.progress, outputPath: result.outputPath }
-              : file,
-          ),
-        );
-      });
-
-      await nlEvents.on("conversion.completed", (event) => {
-        const result = detailData<ConversionEvent>(event);
-        if (!active || !result?.id) return;
-        setFiles((prev) =>
-          {
-            const next = prev.map((file) => (file.id === result.id ? { ...file, status: "done" as const, progress: 100, outputPath: result.outputPath } : file));
-            if (next.length > 0 && next.every((file) => file.status === "done" || file.status === "error")) {
-              window.queueMicrotask(() => {
-                setConverting(false);
-                setConvertDone(next.some((file) => file.status === "done"));
-              });
-            }
-            return next;
-          },
-        );
-      });
-
-      await nlEvents.on("conversion.failed", (event) => {
-        const result = detailData<ConversionEvent>(event);
-        if (!active) return;
-        setConverting(false);
-        setConvertDone(false);
-        setFiles((prev) =>
-          prev.map((file) =>
-            !result?.id || file.id === result.id
-              ? { ...file, status: file.status === "converting" ? "error" : file.status, progress: 0, error: result?.error || "Conversion failed" }
-              : file,
-          ),
-        );
-      });
-
-      await nlEvents.on("conversion.cancelled", (event) => {
-        const result = detailData<ConversionEvent>(event);
-        if (!active) return;
-        setConverting(false);
-        setConvertDone(false);
-        setFiles((prev) =>
-          prev.map((file) =>
-            !result?.id || file.id === result.id ? { ...file, status: "ready", progress: 0, error: undefined } : file,
-          ),
-        );
-      });
-
-      await dispatchBackend("backend.health").catch((error) => setBackendStatus(error instanceof Error ? error.message : "Backend unavailable"));
-    };
-
-    void listen();
-    return () => {
-      active = false;
-    };
-  }, []);
-
-  const failProbe = useCallback((id: number, error: string) => {
-    const timer = probeTimersRef.current.get(id);
-    if (timer) {
-      window.clearTimeout(timer);
-      probeTimersRef.current.delete(id);
-    }
-    setFiles((prev) =>
-      prev.map((file) => (file.id === id && file.status === "probing" ? { ...file, status: "error", error } : file)),
-    );
-  }, []);
-
-  useEffect(() => {
-    if (!hasNeutralinoGlobals()) return;
-    void ensureNativeReady().then((ready) => {
-      if (!ready) return undefined;
-      return nlOs.getPath("downloads");
-    }).then((downloadsPath) => {
-      if (!downloadsPath) return;
-      setCustomPath((current) => current || `${downloadsPath}\\converted`);
+    void callApp("GetDownloadsPath").then((downloadsPath) => {
+      if (downloadsPath) setCustomPath((current) => current || `${downloadsPath}\\converted`);
     }).catch(() => undefined);
   }, []);
+
+  const addPaths = useCallback(async (paths: string[]) => {
+    const uniquePaths = paths.filter((path, index) => {
+      const normalized = path.trim();
+      if (!normalized || paths.indexOf(path) !== index || importedPathsRef.current.has(normalized)) return false;
+      importedPathsRef.current.add(normalized);
+      return true;
+    });
+    if (!uniquePaths.length) return;
+    setFileNotice(null);
+    setRuntimeStatus("Probing");
+    try {
+      const results = await callApp("ProbeFiles", uniquePaths);
+      setFiles((prev) => [...prev, ...results.map(resultToAudioFile)]);
+      setConvertDone(false);
+      setRuntimeStatus("Backend ready");
+    } catch (error) {
+      uniquePaths.forEach((path) => importedPathsRef.current.delete(path));
+      setRuntimeStatus("Probe failed");
+      setFileNotice(error instanceof Error ? error.message : "Could not probe selected files.");
+    }
+  }, []);
+
+  useEffect(() => {
+    window.runtime?.OnFileDrop?.((_x: number, _y: number, paths: string[]) => {
+      void addPaths(paths);
+    }, true);
+
+    const offDrop = window.runtime?.EventsOn?.("files:dropped", (paths: string[]) => {
+      void addPaths(paths);
+    });
+    const offProgress = window.runtime?.EventsOn?.("conversion:progress", (event: ConversionEvent) => {
+      if (!event.id) return;
+      setFiles((prev) =>
+        prev.map((file) =>
+          file.id === event.id ? { ...file, status: "converting", progress: event.progress ?? file.progress, outputPath: event.outputPath } : file,
+        ),
+      );
+    });
+    const offCompleted = window.runtime?.EventsOn?.("conversion:completed", (event: ConversionEvent) => {
+      if (!event.id) return;
+      setFiles((prev) =>
+        prev.map((file) => (file.id === event.id ? { ...file, status: "done", progress: 100, outputPath: event.outputPath } : file)),
+      );
+    });
+    const offFailed = window.runtime?.EventsOn?.("conversion:failed", (event: ConversionEvent) => {
+      setConverting(false);
+      setConvertDone(false);
+      setFiles((prev) =>
+        prev.map((file) =>
+          !event.id || file.id === event.id ? { ...file, status: file.status === "converting" ? "error" : file.status, progress: 0, error: event.error || "Conversion failed" } : file,
+        ),
+      );
+    });
+    const offCancelled = window.runtime?.EventsOn?.("conversion:cancelled", (event: ConversionEvent) => {
+      setConverting(false);
+      setConvertDone(false);
+      setFiles((prev) =>
+        prev.map((file) =>
+          !event.id || file.id === event.id ? { ...file, status: "ready", progress: 0, error: undefined } : file,
+        ),
+      );
+    });
+
+    return () => {
+      offDrop?.();
+      offProgress?.();
+      offCompleted?.();
+      offFailed?.();
+      offCancelled?.();
+      window.runtime?.OnFileDropOff?.();
+    };
+  }, [addPaths]);
+
+  useEffect(() => {
+    if (converting && files.length > 0 && files.every((file) => file.status === "done" || file.status === "error")) {
+      window.queueMicrotask(() => {
+        setConverting(false);
+        setConvertDone(files.some((file) => file.status === "done"));
+      });
+    }
+  }, [converting, files]);
 
   const bitrateIdx = BITRATES.indexOf(bitrate);
   const bitratePct = (bitrateIdx / (BITRATES.length - 1)) * 100;
@@ -543,161 +222,19 @@ export default function App() {
     .replace("{track}", file.metadata.track || "00")
     .replace("{year}", file.metadata.year || "")}.${EXT_MAP[format]}`;
 
-  const probeFiles = useCallback((nextFiles: AudioFile[]) => {
-    const filesWithPaths = nextFiles.filter((file) => isAbsolutePath(file.path));
-    const filesWithoutPaths = nextFiles.filter((file) => !isAbsolutePath(file.path));
-    if (filesWithoutPaths.length) {
-      setFiles((prev) =>
-        prev.map((file) =>
-          filesWithoutPaths.some((nextFile) => nextFile.id === file.id)
-            ? {
-                ...file,
-                status: "error",
-                error: "This upload method did not provide a real filesystem path. Use Browse Files in the desktop app.",
-              }
-            : file,
-        ),
-      );
-    }
-    if (!filesWithPaths.length) return;
-
-    if (!hasNeutralinoGlobals()) {
-      setFiles((prev) =>
-        prev.map((file) =>
-          filesWithPaths.some((nextFile) => nextFile.id === file.id)
-            ? { ...file, status: "error", error: "Run with Neutralino to use the Go conversion backend." }
-            : file,
-        ),
-      );
-      return;
-    }
-    filesWithPaths.forEach((file) => {
-      const existingTimer = probeTimersRef.current.get(file.id);
-      if (existingTimer) window.clearTimeout(existingTimer);
-      const timer = window.setTimeout(() => {
-        probeTimersRef.current.delete(file.id);
-        setFiles((prev) =>
-          prev.map((item) =>
-            item.id === file.id && item.status === "probing"
-              ? {
-                  ...item,
-                  status: "error",
-                  error: "Probe timed out. The backend did not return media info within 20 seconds. Check that the Go backend is running and ffprobe can read this file.",
-                }
-              : item,
-          ),
-        );
-      }, probeTimeoutMs);
-      probeTimersRef.current.set(file.id, timer);
-
-      void getExtensionProblem()
-        .then((problem) => {
-          if (!problem) return dispatchBackend("media.probe", { id: file.id, path: file.path, name: file.name });
-          setBackendStatus(problem);
-          return probeWithNativeFFprobe(file).then((result) => {
-            const activeTimer = probeTimersRef.current.get(result.id);
-            if (activeTimer) {
-              window.clearTimeout(activeTimer);
-              probeTimersRef.current.delete(result.id);
-            }
-            setFiles((prev) =>
-              prev.map((item) =>
-                item.id === result.id
-                  ? {
-                      ...item,
-                      size: result.size ?? item.size,
-                      dur: result.duration ?? item.dur,
-                      srcFmt: result.codec || result.format || item.srcFmt,
-                      status: result.error ? "error" : "ready",
-                      error: result.error,
-                      metadata: { ...item.metadata, ...result.metadata },
-                    }
-                  : item,
-              ),
-            );
-          });
-        })
-        .catch((error) => {
-          failProbe(file.id, error instanceof Error ? error.message : "Backend probe dispatch failed.");
-        });
-    });
-  }, [failProbe]);
-
-  const addDroppedFiles = useCallback(async (fileList: FileList | File[]) => {
-    const droppedFiles = Array.from(fileList) as FileWithPath[];
-    if (!droppedFiles.length) return;
-
-    try {
-      const imported = await Promise.all(droppedFiles.map(async (file) => {
-        const importedPath = await droppedFileToPath(file);
-        return {
-          file: pathToAudio(importedPath.path, file.size, file.name),
-          staged: importedPath.staged,
-        };
-      }));
-      const nextFiles = imported.map((item) => item.file);
-      if (imported.some((item) => item.staged)) {
-        setFileNotice("Dropped files were imported into a local temp workspace because this webview did not expose their original paths. Choose a custom output folder if you do not want converted files written beside the staged copy.");
-      } else {
-        setFileNotice(null);
-      }
-      setFiles((prev) => [...prev, ...nextFiles]);
-      setConvertDone(false);
-      probeFiles(nextFiles);
-    } catch (error) {
-      setFileNotice(error instanceof Error ? error.message : "Dropped files could not be imported.");
-    }
-  }, [probeFiles]);
-
-  const addPaths = useCallback(async (paths: string[]) => {
-    const uniquePaths = paths.filter((path, index) => isAbsolutePath(path) && paths.indexOf(path) === index);
-    if (!uniquePaths.length) return;
-    const nextFiles = await Promise.all(uniquePaths.map(async (path) => {
-      const stats = await nlFilesystem.getStats(path).catch(() => undefined);
-      const nextFile = pathToAudio(path, stats?.size ?? 0);
-      if (!stats) return { ...nextFile, status: "error" as const, error: "Could not read this file from disk." };
-      if (!stats.isFile) return { ...nextFile, status: "error" as const, error: "Selected path is not a file." };
-      return nextFile;
-    }));
-    if (!nextFiles.length) return;
-    setFileNotice(null);
-    setFiles((prev) => [...prev, ...nextFiles]);
-    setConvertDone(false);
-    probeFiles(nextFiles.filter((file) => file.status === "probing"));
-  }, [probeFiles]);
-
   const browseFiles = useCallback(() => {
-    void ensureNativeReady().then((ready) => {
-      if (!ready) {
-        setFileNotice("The desktop file picker is unavailable. Start the app with npm run neutralino:run.");
-        return undefined;
-      }
-      return nlOs.showOpenDialog("Select audio files", {
-        multiSelections: true,
-        filters: audioFilters,
-      });
-    }).then((paths) => {
-      if (paths) return addPaths(paths);
-      return undefined;
-    }).catch((error) => {
-      setFileNotice(error instanceof Error ? error.message : "Could not open the file picker.");
-    });
+    void callApp("BrowseAudioFiles")
+      .then(addPaths)
+      .catch((error) => setFileNotice(error instanceof Error ? error.message : "Could not open the file picker."));
   }, [addPaths]);
 
   const chooseCustomPath = useCallback(() => {
-    void ensureNativeReady().then((ready) => {
-      if (!ready) {
-        setFileNotice("The desktop folder picker is unavailable. Start the app with npm run neutralino:run.");
-        return undefined;
-      }
-      return nlOs.showFolderDialog("Choose output folder", { defaultPath: customPath });
-    })
+    void callApp("ChooseOutputFolder", customPath)
       .then((path) => {
-        if (path) {
-          setCustomPath(path);
-          setDest("custom");
-          setFileNotice(null);
-        }
+        if (!path) return;
+        setCustomPath(path);
+        setDest("custom");
+        setFileNotice(null);
       })
       .catch((error) => setFileNotice(error instanceof Error ? error.message : "Could not open the folder picker."));
   }, [customPath]);
@@ -705,8 +242,7 @@ export default function App() {
   const onDrop = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
     setDragOver(false);
-    void addDroppedFiles(event.dataTransfer.files);
-  }, [addDroppedFiles]);
+  }, []);
 
   const onDropzoneDragOver = useCallback((event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
@@ -719,14 +255,9 @@ export default function App() {
 
   const addDemoFiles = () => {
     const demos = [
-      demoFile("Summer Vibes.mp3", "mp3", 4_821_000, 241),
-      demoFile("Intro Track.wav", "wav", 28_430_000, 84),
-      demoFile("Night Drive.flac", "flac", 32_100_000, 312),
-      demoFile("Podcast EP42.m4a", "m4a", 18_720_000, 1180),
-      demoFile("Ambient Loop.ogg", "ogg", 7_230_000, 168),
+      resultToAudioFile({ path: "", name: "Summer Vibes.mp3", size: 4_821_000, duration: 241, format: "MP3", codec: "MP3", bitrate: 192000, metadata: { title: "Summer Vibes", artist: "DJ Coral", album: "Summer 2024", year: "2024", genre: "Electronic", track: "01", comment: "" }, error: "Demo files do not have real filesystem paths." }),
+      resultToAudioFile({ path: "", name: "Intro Track.wav", size: 28_430_000, duration: 84, format: "WAV", codec: "WAV", bitrate: 0, metadata: { title: "Intro Track", artist: "Relyy Studio", album: "Intros", year: "2023", genre: "Ambient", track: "", comment: "Full quality master" }, error: "Demo files do not have real filesystem paths." }),
     ];
-    demos[0].metadata = { title: "Summer Vibes", artist: "DJ Coral", album: "Summer 2024", year: "2024", genre: "Electronic", track: "01", comment: "" };
-    demos[1].metadata = { title: "Intro Track", artist: "Relyy Studio", album: "Intros", year: "2023", genre: "Ambient", track: "", comment: "Full quality master" };
     setFiles(demos);
     setConvertDone(false);
   };
@@ -741,8 +272,13 @@ export default function App() {
   };
 
   const toggleAll = () => setSelected(selected.size === files.length ? new Set() : new Set(files.map((file) => file.id)));
-  const removeFile = (id: number) => setFiles((prev) => prev.filter((file) => file.id !== id));
+  const removeFile = (id: number) => setFiles((prev) => {
+    const removed = prev.find((file) => file.id === id);
+    if (removed?.path) importedPathsRef.current.delete(removed.path);
+    return prev.filter((file) => file.id !== id);
+  });
   const clearAll = () => {
+    importedPathsRef.current.clear();
     setFiles([]);
     setSelected(new Set());
     setMetaFileId(null);
@@ -760,41 +296,38 @@ export default function App() {
   const startConvert = () => {
     if (!readyCount || converting) return;
     const targets = files.filter((file) => file.status === "ready");
+    const request: ConvertRequest = {
+      files: targets.map((file) => ({ id: file.id, path: file.path, name: file.name, duration: file.dur, metadata: file.metadata })),
+      format,
+      bitrate,
+      dest,
+      customPath,
+      subfolder,
+      template,
+      preserveMeta,
+    };
+
     setConverting(true);
     setConvertDone(false);
     setFiles((prev) =>
       prev.map((file) => (targets.some((target) => target.id === file.id) ? { ...file, status: "converting", progress: 0, error: undefined } : file)),
     );
 
-    void (async () => {
-      for (const [index, file] of targets.entries()) {
-        const outputPath = await resolveOutputPath(file, format, bitrate, dest, customPath, subfolder, template);
-        setFiles((prev) =>
-          prev.map((item) => (item.id === file.id ? { ...item, status: "converting", progress: Math.max(5, Math.round((index / targets.length) * 100)), outputPath } : item)),
-        );
-        await convertWithNativeFFmpeg(file, outputPath, format, bitrate, preserveMeta);
-        setFiles((prev) =>
-          prev.map((item) => (item.id === file.id ? { ...item, status: "done", progress: 100, outputPath } : item)),
-        );
-      }
+    void callApp("ConvertFiles", request).then(() => {
       setConverting(false);
       setConvertDone(true);
-    })().catch((error) => {
+    }).catch((error) => {
       const message = error instanceof Error ? error.message : "Conversion failed.";
       setConverting(false);
       setConvertDone(false);
       setFiles((prev) =>
-        prev.map((file) =>
-          file.status === "converting"
-            ? { ...file, status: "error", progress: 0, error: message }
-            : file,
-        ),
+        prev.map((file) => (file.status === "converting" ? { ...file, status: "error", progress: 0, error: message } : file)),
       );
     });
   };
 
   const cancelConvert = () => {
-    void dispatchBackend("conversion.cancel").catch(() => undefined);
+    void callApp("CancelConversion").catch(() => undefined);
     setConverting(false);
     setFiles((prev) => prev.map((file) => (file.status === "converting" ? { ...file, status: "ready", progress: 0 } : file)));
   };
@@ -804,7 +337,7 @@ export default function App() {
       <section className="converter-window">
         <AppWindowChrome
           appName="RelyyConvert"
-          subtitle={backendStatus}
+          subtitle={runtimeStatus}
           darkMode={dark}
           currentTimeLabel={currentTimeLabel}
           currentDateLabel={currentDateLabel}
@@ -836,7 +369,7 @@ export default function App() {
             onTogglePreserveMeta={() => setPreserveMeta((value) => !value)}
           />
 
-          <main className="converter-main">
+          <main className="converter-main" style={{ "--wails-drop-target": "drop" } as CSSProperties}>
             {fileNotice ? (
               <div className="file-notice" role="status">
                 {fileNotice}
@@ -900,7 +433,6 @@ export default function App() {
           ) : null}
         </div>
       </section>
-
     </div>
   );
 }

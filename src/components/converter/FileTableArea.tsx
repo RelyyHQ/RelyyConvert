@@ -39,7 +39,7 @@ export default function FileTableArea({
   const errorFiles = files.filter((file) => file.status === "error" && file.error);
 
   return (
-    <div className="file-area" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
+    <div className="file-area wails-file-drop-target" onDragOver={(event) => event.preventDefault()} onDrop={onDrop}>
       <div className="table-toolbar">
         <span>
           {files.length} file{files.length === 1 ? "" : "s"} - {fmtSize(totalSize)}

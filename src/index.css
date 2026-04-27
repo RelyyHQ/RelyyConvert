@@ -286,6 +286,26 @@ input[type="range"]::-webkit-slider-runnable-track {
   box-shadow: var(--shadow-window);
 }
 
+.app-window-chrome,
+[data-wails-drag] {
+  --wails-draggable: drag;
+  -webkit-app-region: drag;
+}
+
+.app-window-chrome button,
+.app-window-chrome a,
+.app-window-chrome input,
+.app-window-chrome select,
+.app-window-chrome textarea,
+[data-wails-no-drag] {
+  --wails-draggable: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.wails-file-drop-target {
+  --wails-drop-target: drop;
+}
+
 .converter-titlebar {
   display: flex;
   height: 44px;

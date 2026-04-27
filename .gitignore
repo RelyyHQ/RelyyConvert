@@ -12,6 +12,10 @@ bin
 app
 dist
 dist-ssr
+build/bin/
+frontend/wailsjs/
+wailsjs/
+package.json.md5
 *.local
 extensions/relyyconvert-backend/bin/
 extensions/relyyconvert-backend/vendor/ffmpeg/win_x64/ffmpeg.exe
