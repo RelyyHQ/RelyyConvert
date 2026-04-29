@@ -28,10 +28,16 @@ Use an LGPL-compatible FFmpeg build. Keep the matching license, source notice, a
 npm run app:build
 ```
 
-This builds the Wails executable at:
+On Windows, this builds the Wails executable at:
 
 ```text
 build/bin/RelyyConvert.exe
+```
+
+On macOS, this builds the local app bundle at:
+
+```text
+build/bin/RelyyConvert.app
 ```
 
 The build script copies bundled FFmpeg files into:
@@ -42,13 +48,24 @@ build/bin/third_party/ffmpeg/win_x64/
 
 ## Signing
 
+macOS signing must run on macOS. For a signed macOS app bundle:
+
+```bash
+npm run app:build
+npm run app:sign:mac
+```
+
+Set `APPLE_SIGN_IDENTITY` when you want to pin a specific `Developer ID Application` certificate. See [docs/release-macos.md](docs/release-macos.md) for signed installer and notarization commands.
+
+Windows signing must run on Windows.
+
 Install the Windows SDK so `signtool.exe` is available. Signing scripts automatically load `.env.installer.local` or `env.installer.local` when present.
 
 For a local self-signed development certificate:
 
 ```powershell
-npm run cert:create-dev
-npm run app:sign
+npm run cert:create-dev:windows
+npm run app:sign:windows
 ```
 
 For a CA-issued certificate file:
@@ -56,7 +73,7 @@ For a CA-issued certificate file:
 ```powershell
 $env:WINDOWS_CERT_PATH="C:\path\to\certificate.pfx"
 $env:WINDOWS_CERT_PASSWORD="certificate-password"
-npm run app:sign
+npm run app:sign:windows
 ```
 
 Optional environment variables:
@@ -70,10 +87,22 @@ Optional environment variables:
 
 ## Installer
 
-Install Inno Setup 6 and run:
+For macOS, build a local `.pkg` installer with:
 
 ```bash
-npm run installer:build
+npm run installer:build:mac
+```
+
+Build a signed and notarized macOS installer with:
+
+```bash
+npm run installer:build:mac:release
+```
+
+The Windows installer is a Windows `.exe` installer and must be built on Windows. Install Inno Setup 6 and run:
+
+```bash
+npm run installer:build:windows
 ```
 
 The installer output is:
@@ -102,5 +131,5 @@ Required release checks:
 - `npm run lint`
 - `go test .`
 - `npm run app:build`
-- `npm run app:sign`
-- `npm run installer:build`
+- `npm run app:sign:windows`
+- `npm run installer:build:windows`

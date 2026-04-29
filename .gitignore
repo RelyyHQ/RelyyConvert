@@ -20,6 +20,8 @@ frontend/wailsjs/
 wailsjs/
 package.json.md5
 *.local
+.local/
+.pi/
 .env*.local
 env*.local
 certs/

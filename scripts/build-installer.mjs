@@ -6,6 +6,15 @@ import { loadLocalEnv } from "./load-local-env.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 loadLocalEnv(root);
+
+if (process.platform !== "win32") {
+  console.error("installer:build is a Windows release command and must run on Windows.");
+  console.error(`Current host: ${process.platform}/${process.arch}.`);
+  console.error("Use npm run app:build on macOS to build the local .app.");
+  console.error("To build the Windows installer, run this on Windows after building RelyyConvert.exe.");
+  process.exit(1);
+}
+
 const appExe = resolve(root, "build", "bin", "RelyyConvert.exe");
 const ffmpegExe = resolve(root, "build", "bin", "third_party", "ffmpeg", "win_x64", "ffmpeg.exe");
 const ffprobeExe = resolve(root, "build", "bin", "third_party", "ffmpeg", "win_x64", "ffprobe.exe");
