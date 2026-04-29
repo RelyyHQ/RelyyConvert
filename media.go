@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	goruntime "runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -19,62 +20,62 @@ import (
 )
 
 type FileMetadata struct {
-	Title string `json:"title"`
-	Artist string `json:"artist"`
-	Album string `json:"album"`
-	Year string `json:"year"`
-	Genre string `json:"genre"`
-	Track string `json:"track"`
+	Title   string `json:"title"`
+	Artist  string `json:"artist"`
+	Album   string `json:"album"`
+	Year    string `json:"year"`
+	Genre   string `json:"genre"`
+	Track   string `json:"track"`
 	Comment string `json:"comment"`
 }
 
 type ProbeResult struct {
-	Path string `json:"path"`
-	Name string `json:"name"`
-	Size int64 `json:"size"`
-	Duration float64 `json:"duration"`
-	Format string `json:"format"`
-	Codec string `json:"codec"`
-	Bitrate int64 `json:"bitrate"`
+	Path     string       `json:"path"`
+	Name     string       `json:"name"`
+	Size     int64        `json:"size"`
+	Duration float64      `json:"duration"`
+	Format   string       `json:"format"`
+	Codec    string       `json:"codec"`
+	Bitrate  int64        `json:"bitrate"`
 	Metadata FileMetadata `json:"metadata"`
-	Error string `json:"error,omitempty"`
+	Error    string       `json:"error,omitempty"`
 }
 
 type ConvertFile struct {
-	ID int `json:"id"`
-	Path string `json:"path"`
-	Name string `json:"name"`
-	Duration float64 `json:"duration"`
+	ID       int          `json:"id"`
+	Path     string       `json:"path"`
+	Name     string       `json:"name"`
+	Duration float64      `json:"duration"`
 	Metadata FileMetadata `json:"metadata"`
 }
 
 type ConvertRequest struct {
-	Files []ConvertFile `json:"files"`
-	Format string `json:"format"`
-	Bitrate int `json:"bitrate"`
-	Dest string `json:"dest"`
-	CustomPath string `json:"customPath"`
-	Subfolder string `json:"subfolder"`
-	Template string `json:"template"`
-	PreserveMeta bool `json:"preserveMeta"`
+	Files        []ConvertFile `json:"files"`
+	Format       string        `json:"format"`
+	Bitrate      int           `json:"bitrate"`
+	Dest         string        `json:"dest"`
+	CustomPath   string        `json:"customPath"`
+	Subfolder    string        `json:"subfolder"`
+	Template     string        `json:"template"`
+	PreserveMeta bool          `json:"preserveMeta"`
 }
 
 type ConversionEvent struct {
-	ID int `json:"id,omitempty"`
-	Progress int `json:"progress,omitempty"`
+	ID         int    `json:"id,omitempty"`
+	Progress   int    `json:"progress,omitempty"`
 	OutputPath string `json:"outputPath,omitempty"`
-	Error string `json:"error,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 var supportedFormats = map[string]string{
-	"MP3": "mp3",
-	"AAC": "m4a",
+	"MP3":  "mp3",
+	"AAC":  "m4a",
 	"FLAC": "flac",
-	"WAV": "wav",
-	"OGG": "ogg",
+	"WAV":  "wav",
+	"OGG":  "ogg",
 	"OPUS": "opus",
 	"AIFF": "aiff",
-	"WMA": "wma",
+	"WMA":  "wma",
 }
 
 func (a *App) ProbeFiles(paths []string) []ProbeResult {
@@ -198,10 +199,10 @@ type ffprobeOutput struct {
 		CodecType string `json:"codec_type"`
 	} `json:"streams"`
 	Format struct {
-		FormatName string `json:"format_name"`
-		Duration string `json:"duration"`
-		BitRate string `json:"bit_rate"`
-		Tags map[string]string `json:"tags"`
+		FormatName string            `json:"format_name"`
+		Duration   string            `json:"duration"`
+		BitRate    string            `json:"bit_rate"`
+		Tags       map[string]string `json:"tags"`
 	} `json:"format"`
 }
 
@@ -277,12 +278,12 @@ func codecArgs(format string, bitrate int) []string {
 
 func metadataArgs(meta FileMetadata) []string {
 	values := map[string]string{
-		"title": meta.Title,
-		"artist": meta.Artist,
-		"album": meta.Album,
-		"date": meta.Year,
-		"genre": meta.Genre,
-		"track": meta.Track,
+		"title":   meta.Title,
+		"artist":  meta.Artist,
+		"album":   meta.Album,
+		"date":    meta.Year,
+		"genre":   meta.Genre,
+		"track":   meta.Track,
 		"comment": meta.Comment,
 	}
 	args := []string{}
@@ -386,44 +387,55 @@ func metadataFromTags(tags map[string]string) FileMetadata {
 		return ""
 	}
 	return FileMetadata{
-		Title: find("title"),
-		Artist: find("artist", "album_artist"),
-		Album: find("album"),
-		Year: find("date", "year"),
-		Genre: find("genre"),
-		Track: find("track", "tracknumber"),
+		Title:   find("title"),
+		Artist:  find("artist", "album_artist"),
+		Album:   find("album"),
+		Year:    find("date", "year"),
+		Genre:   find("genre"),
+		Track:   find("track", "tracknumber"),
 		Comment: find("comment", "description"),
 	}
 }
 
 func ffmpegPath() string {
-	return bundledToolPath("ffmpeg.exe")
+	return bundledToolPath("ffmpeg")
 }
 
 func ffprobePath() string {
-	return bundledToolPath("ffprobe.exe")
+	return bundledToolPath("ffprobe")
 }
 
 func bundledToolPath(name string) string {
+	filename := name
+	platformDir := ""
+	if goruntime.GOOS == "windows" {
+		filename = name + ".exe"
+		platformDir = "win_x64"
+	}
+
 	candidates := []string{}
 	if exe, err := os.Executable(); err == nil {
 		dir := filepath.Dir(exe)
-		candidates = append(candidates,
-			filepath.Join(dir, "third_party", "ffmpeg", "win_x64", name),
-		)
+		candidates = appendToolCandidates(candidates, dir, platformDir, filename)
 	}
 	if cwd, err := os.Getwd(); err == nil {
-		candidates = append(candidates,
-			filepath.Join(cwd, "third_party", "ffmpeg", "win_x64", name),
-			filepath.Join(cwd, "..", "third_party", "ffmpeg", "win_x64", name),
-		)
+		candidates = appendToolCandidates(candidates, cwd, platformDir, filename)
+		candidates = appendToolCandidates(candidates, filepath.Join(cwd, ".."), platformDir, filename)
 	}
 	for _, candidate := range candidates {
 		if _, err := os.Stat(candidate); err == nil {
 			return candidate
 		}
 	}
-	return name
+	return filename
+}
+
+func appendToolCandidates(candidates []string, root string, platformDir string, filename string) []string {
+	toolRoot := filepath.Join(root, "third_party", "ffmpeg")
+	if platformDir != "" {
+		candidates = append(candidates, filepath.Join(toolRoot, platformDir, filename))
+	}
+	return append(candidates, filepath.Join(toolRoot, filename))
 }
 
 func dedupePaths(paths []string) []string {

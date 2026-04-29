@@ -13,10 +13,12 @@ The Wails shell provides native file dialogs and native drag/drop paths. Dragged
 
 ## FFmpeg
 
-Bundled Windows x64 FFmpeg tools are expected at:
+Bundled third-party FFmpeg tools are expected at:
 
 - `third_party/ffmpeg/win_x64/ffmpeg.exe`
 - `third_party/ffmpeg/win_x64/ffprobe.exe`
+- `third_party/ffmpeg/ffmpeg`
+- `third_party/ffmpeg/ffprobe`
 
 Use an LGPL-compatible FFmpeg build. Keep the matching license, source notice, and build provenance files beside the binaries and reflected in `THIRD_PARTY_NOTICES.md`.
 

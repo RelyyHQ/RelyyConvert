@@ -14,4 +14,18 @@ const result = spawnSync(command, process.argv.slice(2), {
   stdio: "inherit",
 });
 
+if (result.error) {
+  if (result.error.code === "ENOENT") {
+    console.error(
+      [
+        "Wails CLI was not found.",
+        `Looked for: ${wailsExe}`,
+        'Install it with: go install github.com/wailsapp/wails/v2/cmd/wails@v2.12.0',
+      ].join("\n"),
+    );
+  } else {
+    console.error(result.error.message);
+  }
+}
+
 process.exit(result.status ?? 1);

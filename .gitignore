@@ -13,6 +13,7 @@ app
 dist
 dist-ssr
 build/bin/
+build/darwin/
 frontend/wailsjs/
 wailsjs/
 package.json.md5
@@ -24,6 +25,8 @@ certs/
 *.p12
 third_party/ffmpeg/win_x64/ffmpeg.exe
 third_party/ffmpeg/win_x64/ffprobe.exe
+third_party/ffmpeg/ffmpeg
+third_party/ffmpeg/ffprobe
 
 # Editor directories and files
 .vscode/*
