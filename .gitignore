@@ -10,7 +10,9 @@ lerna-debug.log*
 node_modules
 bin
 app
-dist
+dist/*
+!dist/
+!dist/.gitkeep
 dist-ssr
 build/bin/
 build/darwin/
