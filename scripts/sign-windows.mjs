@@ -6,6 +6,15 @@ import { loadLocalEnv } from "./load-local-env.mjs";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
 loadLocalEnv(root);
+
+if (process.platform !== "win32") {
+  console.error("app:sign is a Windows release command and must run on Windows.");
+  console.error(`Current host: ${process.platform}/${process.arch}.`);
+  console.error("macOS app builds are already ad-hoc signed by the Wails build/copy step.");
+  console.error("To sign the Windows .exe or installer, run this on Windows with signtool available.");
+  process.exit(1);
+}
+
 const defaultDevCertPath = resolve(root, "certs", "RelyyConvert-dev-codesign.pfx");
 
 const files = [

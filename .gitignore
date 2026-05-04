@@ -10,13 +10,18 @@ lerna-debug.log*
 node_modules
 bin
 app
-dist
+dist/*
+!dist/
+!dist/.gitkeep
 dist-ssr
 build/bin/
+build/darwin/
 frontend/wailsjs/
 wailsjs/
 package.json.md5
 *.local
+.local/
+.pi/
 .env*.local
 env*.local
 certs/
@@ -24,6 +29,8 @@ certs/
 *.p12
 third_party/ffmpeg/win_x64/ffmpeg.exe
 third_party/ffmpeg/win_x64/ffprobe.exe
+third_party/ffmpeg/ffmpeg
+third_party/ffmpeg/ffprobe
 
 # Editor directories and files
 .vscode/*

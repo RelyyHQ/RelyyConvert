@@ -2,6 +2,7 @@
 
 ## Prerequisites
 
+- Run these commands on Windows. macOS builds produce `build/bin/RelyyConvert.app`, not `RelyyConvert.exe` or a Windows installer.
 - Go installed.
 - Node dependencies installed with `npm install`.
 - Wails CLI installed. The repo script also checks `%USERPROFILE%\go\bin\wails.exe`.
@@ -28,8 +29,8 @@ The signing scripts automatically load `.env.installer.local` or `env.installer.
 Local self-signed development certificate:
 
 ```powershell
-npm run cert:create-dev
-npm run app:sign
+npm run cert:create-dev:windows
+npm run app:sign:windows
 ```
 
 Certificate file:
@@ -37,20 +38,20 @@ Certificate file:
 ```powershell
 $env:WINDOWS_CERT_PATH="C:\path\to\certificate.pfx"
 $env:WINDOWS_CERT_PASSWORD="certificate-password"
-npm run app:sign
+npm run app:sign:windows
 ```
 
 Certificate from Windows certificate store:
 
 ```powershell
 $env:WINDOWS_CERT_SUBJECT="Your Code Signing Subject"
-npm run app:sign
+npm run app:sign:windows
 ```
 
 ## Build Installer
 
 ```bash
-npm run installer:build
+npm run installer:build:windows
 ```
 
 Output:
@@ -59,7 +60,7 @@ Output:
 dist/installer/RelyyConvertSetup.exe
 ```
 
-Run `npm run app:sign` again after installer creation to sign the installer.
+Run `npm run app:sign:windows` again after installer creation to sign the installer.
 
 ## Release Command
 

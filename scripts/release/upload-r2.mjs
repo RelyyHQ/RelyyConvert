@@ -8,7 +8,7 @@ import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const DIST_DIR = path.join(REPO_ROOT, "dist");
 
-const ARTIFACT_CANDIDATES = [
+const STATIC_ARTIFACT_CANDIDATES = [
   { filePath: path.join(DIST_DIR, "installer", "RelyyConvertSetup.exe"), platform: "windows" },
   { filePath: path.join(DIST_DIR, "RelyyConvertSetup.exe"), platform: "windows" },
   { filePath: path.join(REPO_ROOT, "build", "bin", "RelyyConvert.exe"), platform: "windows" },
@@ -158,13 +158,13 @@ function resolveArtifact(artifactArg, platformHint) {
     };
   }
 
-  const existing = ARTIFACT_CANDIDATES
+  const existing = discoverArtifactCandidates()
     .filter((candidate) => fs.existsSync(candidate.filePath))
     .map((candidate) => ({ ...candidate, stat: fs.statSync(candidate.filePath) }))
     .sort((a, b) => b.stat.mtimeMs - a.stat.mtimeMs);
 
   if (existing.length === 0) {
-    throw new Error("no release artifact found. Build first with: npm run installer:build");
+    throw new Error("no release artifact found. Build first with: npm run installer:build:mac or npm run installer:build:windows");
   }
 
   if (normalizedHint) {
@@ -175,6 +175,25 @@ function resolveArtifact(artifactArg, platformHint) {
   }
 
   return existing[0];
+}
+
+function discoverArtifactCandidates() {
+  const candidates = [...STATIC_ARTIFACT_CANDIDATES];
+  const macInstallerDir = path.join(DIST_DIR, "installer", "macos");
+
+  if (fs.existsSync(macInstallerDir)) {
+    for (const entry of fs.readdirSync(macInstallerDir, { withFileTypes: true })) {
+      if (!entry.isFile()) continue;
+      const fileName = entry.name.toLowerCase();
+      if (!fileName.endsWith(".pkg") && !fileName.endsWith(".dmg")) continue;
+      candidates.push({
+        filePath: path.join(macInstallerDir, entry.name),
+        platform: "macos",
+      });
+    }
+  }
+
+  return candidates;
 }
 
 function inferPlatformFromName(fileName) {
